@@ -28,3 +28,5 @@ Session.vim
 src/runner/executor/
 src/runner/tesst.ts
 compare.py
+.yarn/
+.yarnrc.yml
