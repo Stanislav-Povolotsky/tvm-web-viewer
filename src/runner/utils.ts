@@ -219,12 +219,18 @@ export async function linkToTx(
                 }
             addr = Address.parseRaw(res.transactions[0].account);
         } catch (e) {
-            console.log('Trying another format...');
+            console.log('Trying hash formats...');
             try {
+                if (txLink.endsWith('=')) {
+                    // convert base64 to hex (if base64)
+                    txLink = Buffer.from(txLink, 'base64').toString('hex');
+                }
+
                 if (txLink.length !== 64) throw new Error('Not hash');
 
                 // (just hash)
-                // example:
+                // examples:
+                // fyGURCMaAmBYVk39QcE/ToX7zQUVA2cyRsO6/U52HW8=
                 // 3e5f49798de239da5d8f80b4dc300204d37613e4203a3f7b877c04a88c81856b
                 let res: TransactionList;
                 testnet = forcedTestnet || false;
