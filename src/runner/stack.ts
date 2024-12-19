@@ -1,7 +1,7 @@
 import { Cell, OutAction, loadOutList, OutActionReserve } from '@ton/core';
 import { StackElement } from './types';
 
-function parseStackElement(word: string, wordsNext: string[]): StackElement {
+function parseStackElement(word: string): StackElement {
     // Parsing every type of stack element:
     //
     // Integer - signed 257-bit integers
@@ -19,7 +19,7 @@ function parseStackElement(word: string, wordsNext: string[]): StackElement {
         return null;
     } else if (word.startsWith('(') && word.endsWith(')')) {
         // tuple of 1 element
-        return [parseStackElement(word.slice(1, -1), wordsNext)];
+        return [parseStackElement(word.slice(1, -1))];
     } else if (word.startsWith('C{')) {
         // cell - push Cell type
         try {
@@ -75,40 +75,51 @@ function parseStackElement(word: string, wordsNext: string[]): StackElement {
 }
 
 export function parseStack(line: string): any[] {
-    const stack: any[] = [];
-    const words = line.split(' ');
-    const stackStack: any[][] = [stack]; // Stack of stacks
+    // put spaces before and after every '[' and ']'
+    line = line.replace(/\[/g, ' [ ');
+    line = line.replace(/\]/g, ' ] ');
+
+    // split by spaces
+    const words = line.split(/\s+/);
+    const stackStack: any[][] = []; // Stack of stacks
+
     for (let i = 0; i < words.length; i++) {
-        let word = words[i];
+        let word = words[i].trim();
 
         // skip some basic info
-        if (['stack:', '[', ']', ''].indexOf(word) !== -1) continue;
+        if (['stack:', ''].indexOf(word) !== -1) continue;
 
-        // tuple starts as [ and ends as ] with no space
-        // [10000000000000
-        // 700000000000000]
-        if (word.startsWith('[') && !word.startsWith('[  ')) {
+        if (word == '[') {
             // tuple start
             const newStack: any[] = [];
             stackStack.push(newStack);
-            word = word.slice(1);
+            continue;
         }
-        let tupleEnd = false;
-        if (word.endsWith(']') && !word.endsWith(' ]')) {
-            tupleEnd = true;
-            word = word.slice(0, -1);
+        if (word == ']') {
+            // tuple end
+            const tuple = stackStack.pop();
+            if (tuple == undefined) {
+                throw new Error(
+                    'Something unexpected. Tuple ended without start.'
+                );
+            }
+            if (stackStack.length > 0) {
+                // end some nested tuple
+                stackStack[stackStack.length - 1].push(tuple);
+                continue;
+            } else {
+                // end of the whole stack - return result
+                return tuple;
+            }
         }
 
-        let stackElement = parseStackElement(word, words.slice(i + 1));
-        if (stackElement !== undefined)
+        let stackElement = parseStackElement(word);
+        if (stackElement !== undefined) {
             stackStack[stackStack.length - 1].push(stackElement);
-        if (tupleEnd) {
-            const tuple = stackStack.pop();
-            stackStack[stackStack.length - 1].push(tuple);
         }
     }
-
-    return stack;
+    // should not go there, but just in case
+    return stackStack[0];
 }
 
 export function parseC5(line: string): (OutAction | OutActionReserve)[] {
