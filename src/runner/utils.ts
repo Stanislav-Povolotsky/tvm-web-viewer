@@ -259,13 +259,17 @@ export async function linkToTx(
                             testnet
                         );
                         if (res.transactions.length === 0)
-                            throw new Error('No transactions found');
+                            throw new Error(`No transactions found`);
                     }
                 hash = Buffer.from(res.transactions[0].hash, 'base64');
                 lt = BigInt(res.transactions[0].lt);
                 addr = Address.parseRaw(res.transactions[0].account);
             } catch (e) {
-                throw new Error('Unknown tx link format');
+                let msg = 'very strange error'
+                if ( e instanceof Error)  {
+                    msg = e.message
+                }
+                throw new Error(`Unknown tx link format: ${msg}`);
             }
         }
     }
