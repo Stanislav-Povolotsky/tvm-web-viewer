@@ -26,8 +26,12 @@ export async function fetchTransactions(
         );
         return response.data;
     } catch (error) {
-        console.error('Error fetching transactions:', error);
-        throw error;
+        console.error('Error fetching transactions from toncenter:', error);
+        if (error instanceof Error) {
+            throw Error('Get transactions on Toncenter V3: ' + error.message);
+        } else {
+            throw error;
+        }
     }
 }
 
@@ -72,8 +76,12 @@ export async function mcSeqnoByShard(
             randSeed: Buffer.from(block.rand_seed, 'base64'),
         };
     } catch (error) {
-        console.error('Error fetching mc_seqno:', error);
-        throw error;
+        console.error('Error fetching mc block from toncenter:', error);
+        if (error instanceof Error) {
+            throw Error('Get blocks on Toncenter V3: ' + error.message);
+        } else {
+            throw error;
+        }
     }
 }
 
@@ -97,8 +105,12 @@ export async function getLib(libhash: string, testnet: boolean): Promise<Cell> {
         const libB64 = res.data.data.get_lib;
         return Cell.fromBase64(libB64);
     } catch (error) {
-        console.error('Error fetching library:', error);
-        throw error;
+        console.error('Error fetching libs from dton:', error);
+        if (error instanceof Error) {
+            throw Error("Get libs on dton's graphql: " + error.message);
+        } else {
+            throw error;
+        }
     }
 }
 
@@ -180,6 +192,13 @@ export async function linkToTx(
         addr = Address.parseRaw(res.transactions[0].account);
         lt = BigInt(res.transactions[0].lt);
     } else {
+        let triedFormats: string[] = [
+            'ton.cx',
+            'tonviewer',
+            'tonscan',
+            'toncoin.org',
+            'dton',
+        ];
         try {
             // (copied from ton.cx lt and hash field)
             // example:
@@ -204,29 +223,34 @@ export async function linkToTx(
                         { hash: hashStr, limit: 1 },
                         testnet
                     );
-                    if (res.transactions.length === 0)
-                        throw new Error('No transactions found');
+                    if (res.transactions.length === 0) {
+                        triedFormats.push('lt:hash mainnet');
+                        throw new Error('nope');
+                    }
                 } catch {
-                    console.log(`Trying testnet for ${hashStr}...`);
+                    console.log(`Trying lt:hash testnet for ${hashStr}...`);
                     testnet = true;
                     await waitForRateLimit();
                     res = await fetchTransactions(
                         { hash: hashStr, limit: 1 },
                         testnet
                     );
-                    if (res.transactions.length === 0)
-                        throw new Error('No transactions found');
+                    if (res.transactions.length === 0) {
+                        triedFormats.push('lt:hash testnet');
+                        throw new Error('nope');
+                    }
                 }
             addr = Address.parseRaw(res.transactions[0].account);
         } catch (e) {
-            console.log('Trying hash formats...');
+            console.log('Trying bare hash formats...');
             try {
                 if (txLink.endsWith('=')) {
                     // convert base64 to hex (if base64)
                     txLink = Buffer.from(txLink, 'base64').toString('hex');
                 }
 
-                if (txLink.length !== 64) throw new Error('Not hash');
+                if (txLink.length !== 64)
+                    throw new Error('Seems like hash, but not of length 64. Probably missing letters');
 
                 // (just hash)
                 // examples:
@@ -243,33 +267,44 @@ export async function linkToTx(
                     );
                 else
                     try {
-                        console.log(`Trying mainnet for ${txLink}...`);
+                        console.log(
+                            `Trying bare hash mainnet for ${txLink}...`
+                        );
                         res = await fetchTransactions(
                             { hash: txLink, limit: 1 },
                             testnet
                         );
-                        if (res.transactions.length === 0)
-                            throw new Error('No transactions found');
+                        if (res.transactions.length === 0) {
+                            triedFormats.push('bare hash mainnet');
+                            throw new Error('nope');
+                        }
                     } catch {
-                        console.log(`Trying testnet for ${txLink}...`);
+                        console.log(
+                            `Trying bare hash testnet for ${txLink}...`
+                        );
                         testnet = true;
                         await waitForRateLimit();
                         res = await fetchTransactions(
                             { hash: txLink, limit: 1 },
                             testnet
                         );
-                        if (res.transactions.length === 0)
-                            throw new Error(`No transactions found`);
+                        if (res.transactions.length === 0) {
+                            triedFormats.push('bare hash testnet');
+                            throw new Error('nope');
+                        }
                     }
                 hash = Buffer.from(res.transactions[0].hash, 'base64');
                 lt = BigInt(res.transactions[0].lt);
                 addr = Address.parseRaw(res.transactions[0].account);
             } catch (e) {
-                let msg = 'very strange error'
-                if ( e instanceof Error)  {
-                    msg = e.message
+                let maybeMsg = '';
+                if (e instanceof Error && e.message != 'nope') {
+                    maybeMsg = 'Got strange error: ' + e.message;
                 }
-                throw new Error(`Unknown tx link format: ${msg}`);
+                const formatsStr = triedFormats.join(', ');
+                throw new Error(
+                    `Coudn't recognize such link, tried all formats: ${formatsStr}. ${maybeMsg}`
+                );
             }
         }
     }
