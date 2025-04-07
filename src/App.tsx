@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
 
 import {
     ChakraProvider,
@@ -36,6 +36,10 @@ import {
     CardBody,
     CardFooter,
     SimpleGrid,
+    Thead,
+    Th,
+    Tfoot,
+    TableCaption,
 } from '@chakra-ui/react';
 import { ExternalLinkIcon } from '@chakra-ui/icons';
 import {
@@ -57,6 +61,8 @@ import theme from './theme';
 import { DocsIcon } from './icons/docs';
 
 type KeyPressHandler = () => void;
+const OPCODES_JSON_URL =
+    'https://raw.githubusercontent.com/ton-community/ton-docs/refs/heads/main/src/data/opcodes/opcodes.json';
 
 const useGlobalKeyPress = (key: string, action: KeyPressHandler) => {
     useEffect(() => {
@@ -79,6 +85,18 @@ export const getQueryParam = (param: string) => {
     return queryParams.get(param);
 };
 
+interface Opcode {
+    name: string;
+    alias_of: string;
+    tlb: string;
+    doc_category: string;
+    doc_opcode: string;
+    doc_fift: string;
+    doc_stack: string;
+    doc_gas: number | string;
+    doc_description: string;
+}
+
 function App() {
     const txFromArg = decodeURIComponent(getQueryParam('tx') || '');
     const [testnet, setTestnet] = useState<boolean>(
@@ -96,6 +114,13 @@ function App() {
     >(undefined);
     const [processing, setProcessing] = useState(false);
     const [selectedStep, setSelectedStep] = useState<number>(0);
+    const [isStackBefore, setIsStackBefore] = useState<boolean>(false);
+    const [opcodes, setOpcodes] = useState<Opcode[]>([]);
+    const [selectedOpcode, setSelectedOpcode] = useState<Opcode | null>(null);
+    const [matchingOpcodes, setMatchingOpcodes] = useState<Opcode[]>([]);
+    const [selectedOpcodeStackDiff, setSelectedOpcodeStackDiff] = useState<[number, number] | null>(null);
+    const [maxDocWindowHeight, setMaxDocWindowHeight] = useState<number>(0);
+    const docBoxRef = useRef<HTMLDivElement>(null);
 
     const updateURLWithTx = (tx: string) => {
         const encodedTx = encodeURIComponent(tx);
@@ -173,6 +198,164 @@ function App() {
         }
     };
     useGlobalKeyPress('ArrowRight', nextStep);
+
+    const loadOpcodesJson = useCallback(async () => {
+        if (opcodes.length > 0) return;
+
+        try {
+            console.log('Loading opcodes json...');
+            const response = await fetch(OPCODES_JSON_URL);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const data: Opcode[] = await response.json();
+            setOpcodes(data);
+        } catch (error) {
+            console.error('Error loading opcodes:', error);
+        }
+    }, [opcodes]);
+
+    useEffect(() => {
+        // load opcodes on first render
+        loadOpcodesJson();
+    }, []);
+
+    const findOpcodeInfo = useCallback(
+        (opcodeStr: string): Opcode | null => {
+            if (!opcodeStr || opcodes.length === 0) return null;
+
+            let normalizedStr = opcodeStr.trim();
+            if (normalizedStr.startsWith('implicit ')) {
+                normalizedStr = normalizedStr.slice(9).trim();
+            }
+
+            // split into command name and parameters
+            const parts = normalizedStr.split(/\s+|,/);
+            const commandName = parts[0].toUpperCase();
+
+            const exactMatch = opcodes.find(
+                (op) => op.name.toUpperCase() === commandName
+            );
+            if (exactMatch) return exactMatch;
+
+            if (commandName === 'XCHG') {
+                const params = parts.slice(1).filter((p) => p.startsWith('s'));
+                if (params.length >= 2) {
+                    const i = parseInt(params[0].substring(1));
+                    const j = parseInt(params[1].substring(1));
+
+                    if (!isNaN(i) && !isNaN(j)) {
+                        if (i === 0) {
+                            // XCHG_0I (s0,si)
+                            return (
+                                opcodes.find((op) => op.name === 'XCHG_0I') ||
+                                null
+                            );
+                        } else if (i === 1) {
+                            // XCHG_1I (s1,si where i >= 2)
+                            if (j >= 2) {
+                                return (
+                                    opcodes.find(
+                                        (op) => op.name === 'XCHG_1I'
+                                    ) || null
+                                );
+                            }
+                        } else {
+                            // XCHG_IJ (si,sj where 1 <= i < j <= 15)
+                            if (i >= 1 && j > i && j <= 15) {
+                                return (
+                                    opcodes.find(
+                                        (op) => op.name === 'XCHG_IJ'
+                                    ) || null
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
+            for (const op of opcodes) {
+                if (op.doc_fift.includes('[') && op.doc_fift.includes(']')) {
+                    const fiftParts = op.doc_fift.split(/\s+/);
+                    const fiftCommand = fiftParts[0].toUpperCase();
+                    if (fiftCommand === commandName) {
+                        const paramPattern = fiftParts.slice(1).join(' ');
+                        const userParams = parts.slice(1).join(' ');
+                        if (
+                            paramPattern.replace(/\[.*?\]/g, '*').includes('*')
+                        ) {
+                            return op;
+                        }
+                    }
+                }
+            }
+
+            const matchingByDescription = opcodes.filter((op) =>
+                op.doc_description.toUpperCase().includes(commandName)
+            );
+
+            if (matchingByDescription.length > 0) {
+                return matchingByDescription[0];
+            }
+
+            const partialMatches = opcodes.filter(
+                (op) =>
+                    op.name.toUpperCase().includes(commandName) ||
+                    (op.alias_of &&
+                        op.alias_of.toUpperCase().includes(commandName))
+            );
+
+            return partialMatches.length > 0 ? partialMatches[0] : null;
+        },
+        [opcodes]
+    );
+
+    const handleOpcodeClick = useCallback(
+        (hexCode: string) => {
+            if (opcodes.length === 0) {
+                loadOpcodesJson();
+                return;
+            }
+
+            const opcodeInfo = findOpcodeInfo(hexCode);
+
+            const allMatches = findRelatedOpcodes(hexCode, opcodes);
+            setMatchingOpcodes(allMatches);
+
+            setSelectedOpcode(opcodeInfo);
+            setSelectedOpcodeStackDiff(parseOpcodeStackDiff(opcodeInfo?.doc_stack || ''));
+        },
+        [opcodes, loadOpcodesJson, findOpcodeInfo]
+    );
+
+    const findRelatedOpcodes = (
+        opcodeStr: string,
+        allOpcodes: Opcode[]
+    ): Opcode[] => {
+        const normalizedStr = opcodeStr.trim().toUpperCase();
+        const parts = normalizedStr.split(/\s+|,/);
+        const commandName = parts[0];
+
+        return allOpcodes
+            .filter(
+                (op) =>
+                    op.name.toUpperCase().includes(commandName) ||
+                    (op.alias_of &&
+                        op.alias_of.toUpperCase().includes(commandName)) ||
+                    op.doc_fift.toUpperCase().includes(commandName)
+            )
+            .slice(0, 5);
+    };
+
+    // monitor and update maxDocWindowHeight when needed
+    useEffect(() => {
+        if (docBoxRef.current && selectedOpcode) {
+            const currentHeight = docBoxRef.current.scrollHeight;
+            if (currentHeight > maxDocWindowHeight) {
+                setMaxDocWindowHeight(currentHeight);
+            }
+        }
+    }, [selectedOpcode, maxDocWindowHeight]);
 
     return (
         <ChakraProvider theme={theme}>
@@ -346,7 +529,6 @@ function App() {
                                     </Text>
                                 </Box>
 
-                                {/* <Spacer /> */}
                                 <Box>
                                     <TxLink
                                         link={emulationResult.links.toncx}
@@ -459,6 +641,9 @@ function App() {
                                                                     setSelectedStep(
                                                                         i
                                                                     );
+                                                                    handleOpcodeClick(
+                                                                        log.instruction
+                                                                    );
                                                                 }}
                                                             >
                                                                 <Tooltip
@@ -496,6 +681,7 @@ function App() {
                                                 )}
                                             </Box>
                                             <Spacer />
+
                                             {emulationResult.computeLogs && (
                                                 <Box position="relative">
                                                     <Box
@@ -647,6 +833,191 @@ function App() {
                                             )}
                                         </Flex>
                                     </Box>
+
+                                        <Center>
+                                            <Box
+                                                mt="2rem"
+                                                w="100%"
+                                                position="relative"
+                                                bg="white"
+                                                overflow="hidden"
+                                                px="2rem"
+                                                height={maxDocWindowHeight > 0 ? `${maxDocWindowHeight}px` : 'auto'} 
+                                                minHeight="400px"
+                                                overflowY="auto"
+                                                ref={docBoxRef}
+                                            >
+                                            {selectedOpcode ? (
+                                                <Box>
+                                                    <Flex alignItems="center">
+                                                        <Text
+                                                            fontSize="20"
+                                                            fontFamily="IntelOneMono Bold"
+                                                        >
+                                                            {
+                                                                selectedOpcode.name
+                                                            }
+                                                        </Text>
+                                                        {selectedOpcode.alias_of && (
+                                                            <Text
+                                                                fontSize="16"
+                                                                color="gray.500"
+                                                                ml="2"
+                                                            >
+                                                                (alias of{' '}
+                                                                {
+                                                                    selectedOpcode.alias_of
+                                                                }
+                                                                )
+                                                            </Text>
+                                                        )}
+                                                    </Flex>
+                                                    <Text
+                                                        fontSize="14"
+                                                        lineHeight="1.5"
+                                                        whiteSpace="pre-wrap"
+                                                        sx={{
+                                                            '& code': {
+                                                                bg: 'gray.100',
+                                                                p: '1px 4px',
+                                                                borderRadius:
+                                                                    '3px',
+                                                                fontFamily:
+                                                                    'IntelOneMono',
+                                                                fontSize:
+                                                                    '90%',
+                                                            },
+                                                            '& em': {
+                                                                fontStyle:
+                                                                    'italic',
+                                                                color: 'gray.700',
+                                                            },
+                                                        }}
+                                                    >
+                                                        <br />
+                                                        <em>Fift:</em>{' '}
+                                                        {selectedOpcode.doc_fift
+                                                            .split('\n')
+                                                            .map(
+                                                                (
+                                                                    asm,
+                                                                    index
+                                                                ) => (
+                                                                    <code
+                                                                        key={
+                                                                            index
+                                                                        }
+                                                                    >
+                                                                        {
+                                                                            asm
+                                                                        }
+                                                                    </code>
+                                                                )
+                                                            )
+                                                            .reduce(
+                                                                (
+                                                                    prev,
+                                                                    curr,
+                                                                    i
+                                                                ) => [
+                                                                    ...prev,
+                                                                    i > 0
+                                                                        ? ','
+                                                                        : null,
+                                                                    curr,
+                                                                ],
+                                                                [] as React.ReactNode[]
+                                                            )}
+                                                        <br />
+                                                        <em>TLB:</em>{' '}
+                                                        <code>
+                                                            {
+                                                                selectedOpcode.tlb
+                                                            }
+                                                        </code>
+                                                        <br />
+                                                        <em>Stack:</em>{' '}
+                                                        <code>
+                                                            {
+                                                                selectedOpcode.doc_stack
+                                                            }
+                                                        </code>
+                                                        <br />
+                                                        <em>Gas:</em>{' '}
+                                                        <code>
+                                                            {
+                                                                selectedOpcode.doc_gas
+                                                            }
+                                                        </code>
+                                                        <br />
+                                                        <br />
+                                                        <div
+                                                            dangerouslySetInnerHTML={{
+                                                                __html: parseMarkdown(
+                                                                    selectedOpcode.doc_description
+                                                                ),
+                                                            }}
+                                                        />
+                                                    </Text>
+                                                    {matchingOpcodes.length >
+                                                        1 && (
+                                                        <Box mt={4}>
+                                                            <Text
+                                                                fontSize="12"
+                                                                fontWeight="bold"
+                                                            >
+                                                                Similar
+                                                                opcodes:
+                                                            </Text>
+                                                            <Flex
+                                                                flexWrap="wrap"
+                                                                gap={2}
+                                                                mt={1}
+                                                            >
+                                                                {matchingOpcodes.map(
+                                                                    (
+                                                                        op,
+                                                                        idx
+                                                                    ) => (
+                                                                        <Button
+                                                                            key={
+                                                                                idx
+                                                                            }
+                                                                            size="xs"
+                                                                            variant={
+                                                                                op.name ===
+                                                                                selectedOpcode.name
+                                                                                    ? 'solid'
+                                                                                    : 'outline'
+                                                                            }
+                                                                            rounded="0"
+                                                                            borderColor="#ACACAC"
+                                                                            bg={
+                                                                                op.name ===
+                                                                                selectedOpcode.name
+                                                                                    ? '#D9D9D9'
+                                                                                    : '#ffffff'
+                                                                            }
+                                                                            onClick={() =>
+                                                                                setSelectedOpcode(
+                                                                                    op
+                                                                                )
+                                                                            }
+                                                                        >
+                                                                            {
+                                                                                op.name
+                                                                            }
+                                                                        </Button>
+                                                                    )
+                                                                )}
+                                                            </Flex>
+                                                        </Box>
+                                                    )}
+                                                </Box>
+                                            ) : null}
+
+                                            </Box>
+                                        </Center>
                                     <Box
                                         m="1rem"
                                         fontSize="10"
@@ -821,6 +1192,59 @@ function App() {
         </ChakraProvider>
     );
 }
+const parseMarkdown = (text: string): string => {
+    if (!text) return '';
+    let parsed = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+    parsed = parsed.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    parsed = parsed.replace(/\_([^_]+)\_/g, '<em>$1</em>');
+    parsed = parsed.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    return parsed;
+};
+
+const parseOpcodeStackDiff = (text: string): [number, number] | null => {
+    try {
+        // parse stack description items count before and after
+        // "x - x x" -> [1, 2]
+        // "x -" -> [1, 0]
+        // "c c' - c''" -> [2, 1]
+        // and so on
+
+        if (text.length === 0) return null;
+        if (text === '-') return null;
+        if (text.includes('or') && !text.includes('xor')) return null; 
+        if (text.includes('...')) return null;
+
+        if (text.startsWith('- ')) {
+            const afterPart = text.substring(2);
+            return [0, countStackItems(afterPart)];
+        }
+        
+        if (text.endsWith(' -')) {
+            const beforePart = text.substring(0, text.length - 2);
+            return [countStackItems(beforePart), 0];
+        }
+        
+        const parts = text.split(' - ');
+        if (parts.length !== 2) return null;
+        
+        return [countStackItems(parts[0]), countStackItems(parts[1])];
+    } catch {
+        return null;
+    }
+};
+
+const countStackItems = (stackPart: string): number => {
+    if (!stackPart.trim()) return 0;
+    
+    // replace "a mod b" or "a xor b" with one token, to count them as one element
+    const normalized = stackPart
+        .replace(/\w+\s+mod\s+\w+/g, 'X')
+        .replace(/\w+\s+xor\s+\w+/g, 'X');
+    
+    // split string by spaces and count tokens
+    const tokens = normalized.trim().split(" ");
+    return tokens.length;
+};
 
 function outActionElement(action: OutAction, i: number) {
     const json = JSON.stringify(
