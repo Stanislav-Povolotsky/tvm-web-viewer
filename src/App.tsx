@@ -118,7 +118,9 @@ function App() {
     const [opcodes, setOpcodes] = useState<Opcode[]>([]);
     const [selectedOpcode, setSelectedOpcode] = useState<Opcode | null>(null);
     const [matchingOpcodes, setMatchingOpcodes] = useState<Opcode[]>([]);
-    const [selectedOpcodeStackDiff, setSelectedOpcodeStackDiff] = useState<[number, number] | null>(null);
+    const [selectedOpcodeStackDiff, setSelectedOpcodeStackDiff] = useState<
+        [number, number] | null
+    >(null);
     const [maxDocWindowHeight, setMaxDocWindowHeight] = useState<number>(0);
     const docBoxRef = useRef<HTMLDivElement>(null);
 
@@ -323,7 +325,9 @@ function App() {
             setMatchingOpcodes(allMatches);
 
             setSelectedOpcode(opcodeInfo);
-            setSelectedOpcodeStackDiff(parseOpcodeStackDiff(opcodeInfo?.doc_stack || ''));
+            setSelectedOpcodeStackDiff(
+                parseOpcodeStackDiff(opcodeInfo?.doc_stack || '')
+            );
         },
         [opcodes, loadOpcodesJson, findOpcodeInfo]
     );
@@ -834,19 +838,23 @@ function App() {
                                         </Flex>
                                     </Box>
 
-                                        <Center>
-                                            <Box
-                                                mt="2rem"
-                                                w="100%"
-                                                position="relative"
-                                                bg="white"
-                                                overflow="hidden"
-                                                px="2rem"
-                                                height={maxDocWindowHeight > 0 ? `${maxDocWindowHeight}px` : 'auto'} 
-                                                minHeight="400px"
-                                                overflowY="auto"
-                                                ref={docBoxRef}
-                                            >
+                                    <Center>
+                                        <Box
+                                            mt="2rem"
+                                            w="100%"
+                                            position="relative"
+                                            bg="white"
+                                            overflow="hidden"
+                                            px="2rem"
+                                            height={
+                                                maxDocWindowHeight > 0
+                                                    ? `${maxDocWindowHeight}px`
+                                                    : 'auto'
+                                            }
+                                            minHeight="400px"
+                                            overflowY="auto"
+                                            ref={docBoxRef}
+                                        >
                                             {selectedOpcode ? (
                                                 <Box>
                                                     <Flex alignItems="center">
@@ -884,8 +892,7 @@ function App() {
                                                                     '3px',
                                                                 fontFamily:
                                                                     'IntelOneMono',
-                                                                fontSize:
-                                                                    '90%',
+                                                                fontSize: '90%',
                                                             },
                                                             '& em': {
                                                                 fontStyle:
@@ -908,9 +915,7 @@ function App() {
                                                                             index
                                                                         }
                                                                     >
-                                                                        {
-                                                                            asm
-                                                                        }
+                                                                        {asm}
                                                                     </code>
                                                                 )
                                                             )
@@ -931,9 +936,7 @@ function App() {
                                                         <br />
                                                         <em>TLB:</em>{' '}
                                                         <code>
-                                                            {
-                                                                selectedOpcode.tlb
-                                                            }
+                                                            {selectedOpcode.tlb}
                                                         </code>
                                                         <br />
                                                         <em>Stack:</em>{' '}
@@ -966,8 +969,7 @@ function App() {
                                                                 fontSize="12"
                                                                 fontWeight="bold"
                                                             >
-                                                                Similar
-                                                                opcodes:
+                                                                Similar opcodes:
                                                             </Text>
                                                             <Flex
                                                                 flexWrap="wrap"
@@ -1015,9 +1017,8 @@ function App() {
                                                     )}
                                                 </Box>
                                             ) : null}
-
-                                            </Box>
-                                        </Center>
+                                        </Box>
+                                    </Center>
                                     <Box
                                         m="1rem"
                                         fontSize="10"
@@ -1211,22 +1212,22 @@ const parseOpcodeStackDiff = (text: string): [number, number] | null => {
 
         if (text.length === 0) return null;
         if (text === '-') return null;
-        if (text.includes('or') && !text.includes('xor')) return null; 
+        if (text.includes('or') && !text.includes('xor')) return null;
         if (text.includes('...')) return null;
 
         if (text.startsWith('- ')) {
             const afterPart = text.substring(2);
             return [0, countStackItems(afterPart)];
         }
-        
+
         if (text.endsWith(' -')) {
             const beforePart = text.substring(0, text.length - 2);
             return [countStackItems(beforePart), 0];
         }
-        
+
         const parts = text.split(' - ');
         if (parts.length !== 2) return null;
-        
+
         return [countStackItems(parts[0]), countStackItems(parts[1])];
     } catch {
         return null;
@@ -1235,14 +1236,14 @@ const parseOpcodeStackDiff = (text: string): [number, number] | null => {
 
 const countStackItems = (stackPart: string): number => {
     if (!stackPart.trim()) return 0;
-    
+
     // replace "a mod b" or "a xor b" with one token, to count them as one element
     const normalized = stackPart
         .replace(/\w+\s+mod\s+\w+/g, 'X')
         .replace(/\w+\s+xor\s+\w+/g, 'X');
-    
+
     // split string by spaces and count tokens
-    const tokens = normalized.trim().split(" ");
+    const tokens = normalized.trim().split(' ');
     return tokens.length;
 };
 
