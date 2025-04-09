@@ -11,6 +11,7 @@ Stack tracer for debugging smart contracts deployed on TON Blockchain.
 -   Testnet
 -   Executor logs
 -   C5 Actions parser
+-   Opcode documetation (beta)
 -   All explorers support
 -   Enjoyable UI (I hope)
 -   Local run (just in your browser)
