@@ -123,6 +123,7 @@ function App() {
     >(null);
     const [maxDocWindowHeight, setMaxDocWindowHeight] = useState<number>(0);
     const docBoxRef = useRef<HTMLDivElement>(null);
+    const [isHoveringStack, setIsHoveringStack] = useState(false);
 
     const updateURLWithTx = (tx: string) => {
         const encodedTx = encodeURIComponent(tx);
@@ -186,6 +187,11 @@ function App() {
     const prevStep = () => {
         if (selectedStep > 0) {
             setSelectedStep(selectedStep - 1);
+            if (emulationResult) {
+                const instruction =
+                    emulationResult.computeLogs[selectedStep - 1].instruction;
+                handleOpcodeClick(instruction);
+            }
         }
     };
 
@@ -197,6 +203,9 @@ function App() {
             selectedStep < emulationResult.computeLogs.length - 1
         ) {
             setSelectedStep(selectedStep + 1);
+            const instruction =
+                emulationResult.computeLogs[selectedStep + 1].instruction;
+            handleOpcodeClick(instruction);
         }
     };
     useGlobalKeyPress('ArrowRight', nextStep);
@@ -320,10 +329,8 @@ function App() {
             }
 
             const opcodeInfo = findOpcodeInfo(hexCode);
-
             const allMatches = findRelatedOpcodes(hexCode, opcodes);
             setMatchingOpcodes(allMatches);
-
             setSelectedOpcode(opcodeInfo);
             setSelectedOpcodeStackDiff(
                 parseOpcodeStackDiff(opcodeInfo?.doc_stack || '')
@@ -360,6 +367,29 @@ function App() {
             }
         }
     }, [selectedOpcode, maxDocWindowHeight]);
+
+    const determineStackHighlightElements = useCallback(
+        (stack: StackElement[], showBefore: boolean): number[] => {
+            if (!selectedOpcodeStackDiff) return [];
+            
+            const elementsToHighlight: number[] = [];
+            
+            if (showBefore) {
+                const consumed = selectedOpcodeStackDiff[0];
+                for (let i = 0; i < consumed; i++) {
+                    elementsToHighlight.push(i);
+                }
+            } else {
+                const produced = selectedOpcodeStackDiff[1];
+                for (let i = 0; i < produced; i++) {
+                    elementsToHighlight.push(i);
+                }
+            }
+            
+            return elementsToHighlight;
+        },
+        [selectedOpcodeStackDiff]
+    );
 
     return (
         <ChakraProvider theme={theme}>
@@ -758,11 +788,54 @@ function App() {
                                                                 </Button>
                                                             </Tooltip>
                                                         </Flex>
-                                                        <Center>
-                                                            <Text fontSize="12">
-                                                                Stack after:
+                                                        <Flex
+                                                            justifyContent="center"
+                                                            alignItems="center"
+                                                            mb={2}
+                                                        >
+                                                            <Text
+                                                                fontSize="12"
+                                                                cursor={
+                                                                    selectedStep >
+                                                                    0
+                                                                        ? 'help'
+                                                                        : 'default'
+                                                                }
+                                                                textDecoration={
+                                                                    isHoveringStack &&
+                                                                    selectedStep >
+                                                                        0
+                                                                        ? 'underline'
+                                                                        : 'none'
+                                                                }
+                                                                color={
+                                                                    isHoveringStack &&
+                                                                    selectedStep >
+                                                                        0
+                                                                        ? 'blue.500'
+                                                                        : undefined
+                                                                }
+                                                                onMouseEnter={() =>
+                                                                    selectedStep >
+                                                                        0 &&
+                                                                    setIsHoveringStack(
+                                                                        true
+                                                                    )
+                                                                }
+                                                                onMouseLeave={() =>
+                                                                    selectedStep >
+                                                                        0 &&
+                                                                    setIsHoveringStack(
+                                                                        false
+                                                                    )
+                                                                }
+                                                            >
+                                                                {isHoveringStack &&
+                                                                selectedStep > 0
+                                                                    ? 'Stack before:'
+                                                                    : 'Stack after:'}
                                                             </Text>
-                                                        </Center>
+                                                        </Flex>
                                                         <TableContainer
                                                             mt="0.5rem"
                                                             overflowY="scroll"
@@ -811,24 +884,32 @@ function App() {
                                                             )}
                                                             <Table
                                                                 size="sm"
-                                                                variant="striped"
+                                                                variant="unstyled"
                                                             >
                                                                 <Tbody>
-                                                                    {emulationResult.computeLogs[
-                                                                        selectedStep
-                                                                    ].stackAfter
-                                                                        .toReversed()
-                                                                        .map(
-                                                                            (
-                                                                                item,
-                                                                                i
-                                                                            ) =>
+                                                                    {(() => {
+                                                                        const showBefore = isHoveringStack && selectedStep > 0;
+                                                                        const stack = showBefore
+                                                                            ? emulationResult.computeLogs[selectedStep - 1].stackAfter
+                                                                            : emulationResult.computeLogs[selectedStep].stackAfter;
+                                                                        
+                                                                        const elementsToHighlight = determineStackHighlightElements(
+                                                                            stack,
+                                                                            showBefore
+                                                                        );
+                                                                        
+                                                                        return stack
+                                                                            .toReversed()
+                                                                            .map((item, i) =>
                                                                                 stackItemElement(
                                                                                     item,
                                                                                     i,
-                                                                                    handleCopy
+                                                                                    handleCopy,
+                                                                                    elementsToHighlight.includes(i),
+                                                                                    showBefore
                                                                                 )
-                                                                        )}
+                                                                            );
+                                                                    })()}
                                                                 </Tbody>
                                                             </Table>
                                                         </TableContainer>
@@ -1474,29 +1555,35 @@ function CopyButton({
 function stackItemElement(
     item: StackElement,
     i: number,
-    handleCopy: (text: string) => void
+    handleCopy: (text: string) => void,
+    isHighlighted: boolean = false,
+    isStackBefore: boolean = false
 ) {
     if (Array.isArray(item)) {
         return (
             <>
                 <Tr>
                     <Td>
-                        <Box key={i}>
+                        <Box
+                            key={i}
+                            p="0.5rem"
+                            backgroundColor={
+                                i % 2 === 0 ? 'gray.100' : '#D9D9D9'
+                            }
+                        >
                             <Text>{i}. Tuple</Text>
                             <Flex mt="0.5rem">
                                 <Divider orientation="vertical" />
                                 <TableContainer>
-                                    <Table
-                                        size="sm"
-                                        variant="striped"
-                                        colorScheme="yellow"
-                                    >
+                                    <Table size="sm" variant="unstyled">
                                         <Tbody>
                                             {item.map((subItem, j) =>
                                                 stackItemElement(
                                                     subItem,
                                                     j,
-                                                    handleCopy
+                                                    handleCopy,
+                                                    isHighlighted,
+                                                    isStackBefore
                                                 )
                                             )}
                                         </Tbody>
@@ -1560,14 +1647,20 @@ function stackItemElement(
             strRes = strRes.slice(0, 15) + '...' + strRes.slice(-15);
         copyContent = item.toString();
     }
+    
+    const highlightColor = isHighlighted 
+        ? (isStackBefore ? '#ECBC92' : '#68C8FF')
+        : undefined;
+        
     return (
-        <Tr key={i}>
-            <Td>
-                <Box>
-                    <Link onClick={() => handleCopy(copyContent)}>
+        <Tr key={i} p="0">
+            <Td p="0">
+                <Flex backgroundColor={i % 2 === 0 ? 'gray.100' : '#D9D9D9'}>
+                    <Box backgroundColor={highlightColor} w="5px" />
+                    <Link p="0.5rem" onClick={() => handleCopy(copyContent)}>
                         {i}. {strRes}
                     </Link>
-                </Box>
+                </Flex>
             </Td>
         </Tr>
     );
