@@ -366,8 +366,16 @@ export async function getEmulationWithStack(
     let gasRemaining = 0;
     let tryCatchError: { code: number; text: string } | undefined = undefined;
     const logs = txRes.result.vmLog;
-    //console.log('vmlogs:', logs);
     const lines = logs.split('\n');
+    let isStackAfter = (i: number) => {
+        // go for all next lines until we find one starting with "stack:""
+        for (let j = i + 1; j < lines.length; j++) {
+            if (lines[j].startsWith('stack:')) {
+                return true;
+            }
+        }
+        return false;
+    }
     for (let i = 0; i < lines.length; i++) {
         let line = lines[i];
         if (line.startsWith('execute')) {
@@ -440,7 +448,7 @@ export async function getEmulationWithStack(
                 exitCode = Number(line.slice(57));
                 explanation = line;
             }
-            if (i === lines.length - 1) {
+            if (!isStackAfter(i)) { // if last
                 TVMResult.push({
                     instruction,
                     price: undefined,
