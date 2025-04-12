@@ -364,9 +364,12 @@ export async function getEmulationWithStack(
     let instruction = '';
     let prevGasRemaining = 0;
     let gasRemaining = 0;
+    let tryCatchError: { code: number; text: string } | undefined = undefined;
     const logs = txRes.result.vmLog;
-    // console.log('vmlogs:', logs);
-    for (let line of logs.split('\n')) {
+    //console.log('vmlogs:', logs);
+    const lines = logs.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+        let line = lines[i];
         if (line.startsWith('execute')) {
             if (instruction) {
                 console.warn('No stack was for instruction:', instruction);
@@ -393,6 +396,7 @@ export async function getEmulationWithStack(
                     instruction,
                     price,
                     gasRemaining,
+                    error: tryCatchError, // mostly undefined
                     stackAfter: stack,
                 });
             } else {
@@ -408,6 +412,7 @@ export async function getEmulationWithStack(
                         price,
                         gasRemaining,
                         stackAfter: stack,
+                        error: tryCatchError,
                     });
                 }
             }
@@ -415,6 +420,7 @@ export async function getEmulationWithStack(
             instruction = '';
             prevGasRemaining = gasRemaining;
             gasRemaining = 0;
+            tryCatchError = undefined;
         }
 
         if (
@@ -434,17 +440,23 @@ export async function getEmulationWithStack(
                 exitCode = Number(line.slice(57));
                 explanation = line;
             }
-            TVMResult.push({
-                instruction,
-                price: undefined,
-                gasRemaining,
-                error: { code: exitCode, text: explanation },
-                stackAfter: [],
-            });
-            console.log(
-                `Found error ${exitCode} on instruction ${instruction}`
-            );
-            break;
+            if (i === lines.length - 1) {
+                TVMResult.push({
+                    instruction,
+                    price: undefined,
+                    gasRemaining,
+                    error: { code: exitCode, text: explanation },
+                    stackAfter: [],
+                });
+                console.log(
+                    `Found terminal error ${exitCode} on instruction ${instruction}`
+                );
+            } else {
+                console.log(
+                    `Found try/catch exception ${exitCode} on instruction ${instruction}`
+                );
+                tryCatchError = { code: exitCode, text: explanation };
+            }
         }
         if (line.startsWith('final c5:')) {
             finalActions = parseC5(line);

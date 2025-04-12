@@ -371,9 +371,9 @@ function App() {
     const determineStackHighlightElements = useCallback(
         (stack: StackElement[], showBefore: boolean): number[] => {
             if (!selectedOpcodeStackDiff) return [];
-            
+
             const elementsToHighlight: number[] = [];
-            
+
             if (showBefore) {
                 const consumed = selectedOpcodeStackDiff[0];
                 for (let i = 0; i < consumed; i++) {
@@ -385,7 +385,7 @@ function App() {
                     elementsToHighlight.push(i);
                 }
             }
-            
+
             return elementsToHighlight;
         },
         [selectedOpcodeStackDiff]
@@ -888,26 +888,46 @@ function App() {
                                                             >
                                                                 <Tbody>
                                                                     {(() => {
-                                                                        const showBefore = isHoveringStack && selectedStep > 0;
-                                                                        const stack = showBefore
-                                                                            ? emulationResult.computeLogs[selectedStep - 1].stackAfter
-                                                                            : emulationResult.computeLogs[selectedStep].stackAfter;
-                                                                        
-                                                                        const elementsToHighlight = determineStackHighlightElements(
-                                                                            stack,
+                                                                        const showBefore =
+                                                                            isHoveringStack &&
+                                                                            selectedStep >
+                                                                                0;
+                                                                        const stack =
                                                                             showBefore
-                                                                        );
-                                                                        
+                                                                                ? emulationResult
+                                                                                      .computeLogs[
+                                                                                      selectedStep -
+                                                                                          1
+                                                                                  ]
+                                                                                      .stackAfter
+                                                                                : emulationResult
+                                                                                      .computeLogs[
+                                                                                      selectedStep
+                                                                                  ]
+                                                                                      .stackAfter;
+
+                                                                        const elementsToHighlight =
+                                                                            determineStackHighlightElements(
+                                                                                stack,
+                                                                                showBefore
+                                                                            );
+
                                                                         return stack
                                                                             .toReversed()
-                                                                            .map((item, i) =>
-                                                                                stackItemElement(
+                                                                            .map(
+                                                                                (
                                                                                     item,
-                                                                                    i,
-                                                                                    handleCopy,
-                                                                                    elementsToHighlight.includes(i),
-                                                                                    showBefore
-                                                                                )
+                                                                                    i
+                                                                                ) =>
+                                                                                    stackItemElement(
+                                                                                        item,
+                                                                                        i,
+                                                                                        handleCopy,
+                                                                                        elementsToHighlight.includes(
+                                                                                            i
+                                                                                        ),
+                                                                                        showBefore
+                                                                                    )
                                                                             );
                                                                     })()}
                                                                 </Tbody>
@@ -1562,8 +1582,8 @@ function stackItemElement(
     if (Array.isArray(item)) {
         return (
             <>
-                <Tr>
-                    <Td>
+                <Tr p="0">
+                    <Td p="0">
                         <Box
                             key={i}
                             p="0.5rem"
@@ -1647,11 +1667,13 @@ function stackItemElement(
             strRes = strRes.slice(0, 15) + '...' + strRes.slice(-15);
         copyContent = item.toString();
     }
-    
-    const highlightColor = isHighlighted 
-        ? (isStackBefore ? '#ECBC92' : '#68C8FF')
+
+    const highlightColor = isHighlighted
+        ? isStackBefore
+            ? '#ECBC92'
+            : '#68C8FF'
         : undefined;
-        
+
     return (
         <Tr key={i} p="0">
             <Td p="0">
