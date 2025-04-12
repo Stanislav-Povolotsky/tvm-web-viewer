@@ -1587,6 +1587,7 @@ function stackItemElement(
                         <Box
                             key={i}
                             p="0.5rem"
+                            px="0.85rem"
                             backgroundColor={
                                 i % 2 === 0 ? 'gray.100' : '#D9D9D9'
                             }
