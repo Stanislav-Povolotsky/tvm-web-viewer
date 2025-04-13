@@ -459,6 +459,7 @@ export async function getEmulationWithStack(
                 console.log(
                     `Found terminal error ${exitCode} on instruction ${instruction}`
                 );
+                break;
             } else {
                 console.log(
                     `Found try/catch exception ${exitCode} on instruction ${instruction}`
